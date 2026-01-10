@@ -20,27 +20,27 @@ def run_sync():
         'https://www.googleapis.com/auth/spreadsheets'
     ])
     
-    # 2. Find all .fydb files and pick the newest
+    # 2. Find all .fydb files, ignore 0-byte files, and pick the newest
     drive_service = build('drive', 'v3', credentials=creds)
     
-    # Query for files ending in .fydb that aren't in the trash
     query = "name contains '.fydb' and trashed = false"
     results = drive_service.files().list(
         q=query, 
-        fields="files(id, name, modifiedTime)",
-        orderBy="modifiedTime desc" # This puts the newest at the top
+        fields="files(id, name, modifiedTime, size)", # Added 'size'
+        orderBy="modifiedTime desc" 
     ).execute()
     
     files = results.get('files', [])
-    if not files:
-        print("No .fydb files found!")
+    
+    # Filter out files that are too small to be a real database (e.g., < 20KB)
+    valid_files = [f for f in files if int(f.get('size', 0)) > 20000]
+
+    if not valid_files:
+        print("No valid (non-empty) .fydb files found!")
         return
 
-    newest_file = files[0]
-    file_id = newest_file['id']
-    print(f"Syncing newest file: {newest_file['name']} (Modified: {newest_file['modifiedTime']})")
-
-    # Download newest_file['id'] ... (rest of your download logic)
+    newest_file = valid_files[0]
+    print(f"Syncing: {newest_file['name']} | Size: {int(newest_file['size'])/1024:.1f} KB")
 
     # 3. SQL Query (Bluecoins Schema)
     conn = sqlite3.connect("temp.db")
@@ -77,4 +77,5 @@ def run_sync():
 if __name__ == "__main__":
 
     run_sync()
+
 

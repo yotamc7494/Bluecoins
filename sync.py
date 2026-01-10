@@ -20,20 +20,27 @@ def run_sync():
         'https://www.googleapis.com/auth/spreadsheets'
     ])
     
-    # 2. Find and Download SQLite from Drive
+    # 2. Find all .fydb files and pick the newest
     drive_service = build('drive', 'v3', credentials=creds)
-    results = drive_service.files().list(q=f"name='{DB_NAME}'", fields="files(id)").execute()
-    file_id = results.get('files', [])[0]['id']
     
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
+    # Query for files ending in .fydb that aren't in the trash
+    query = "name contains '.fydb' and trashed = false"
+    results = drive_service.files().list(
+        q=query, 
+        fields="files(id, name, modifiedTime)",
+        orderBy="modifiedTime desc" # This puts the newest at the top
+    ).execute()
     
-    with open("temp.db", "wb") as f:
-        f.write(fh.getbuffer())
+    files = results.get('files', [])
+    if not files:
+        print("No .fydb files found!")
+        return
+
+    newest_file = files[0]
+    file_id = newest_file['id']
+    print(f"Syncing newest file: {newest_file['name']} (Modified: {newest_file['modifiedTime']})")
+
+    # Download newest_file['id'] ... (rest of your download logic)
 
     # 3. SQL Query (Bluecoins Schema)
     conn = sqlite3.connect("temp.db")
@@ -63,4 +70,5 @@ def run_sync():
     print("Sync Successful!")
 
 if __name__ == "__main__":
+
     run_sync()

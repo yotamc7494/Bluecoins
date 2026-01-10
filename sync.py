@@ -45,6 +45,11 @@ def run_sync():
     # 3. SQL Query (Bluecoins Schema)
     conn = sqlite3.connect("temp.db")
     # This query joins transactions with categories and accounts
+    # --- ADD THIS TO sync.py TO SEE TABLE NAMES ---
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    print("Tables found in DB:", [row[0] for row in cursor.fetchall()])
+    # ----------------------------------------------
     query = """
     SELECT 
         datetime(DATE/1000, 'unixepoch') as Date, 
@@ -72,3 +77,4 @@ def run_sync():
 if __name__ == "__main__":
 
     run_sync()
+

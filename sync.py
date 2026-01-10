@@ -58,10 +58,22 @@ def run_sync():
         try:
             df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
             
-            # Clean up data for Google Sheets (convert dates/handle NaNs)
+            # --- DATE FIX START ---
+            # 1. Handle NaNs first
             df = df.fillna("")
-            for col in df.select_dtypes(['datetime', 'datetimetz']).columns:
-                df[col] = df[col].astype(str)
+
+            # 2. Iterate through columns to find dates by name or type
+            for col in df.columns:
+                # Bluecoins often uses 'DATE' in column names
+                if 'DATE' in col.upper() or 'TIME' in col.upper():
+                    try:
+                        # Convert to datetime (Bluecoins uses milliseconds, so /1000)
+                        df[col] = pd.to_datetime(df[col], unit='ms', errors='ignore')
+                        # Format as a clean string that Google Sheets understands
+                        df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        pass # If it's not a real date, skip it
+            # --- DATE FIX END ---
 
             # Create tab if missing
             if table not in existing_worksheets:
@@ -70,9 +82,13 @@ def run_sync():
             else:
                 worksheet = existing_worksheets[table]
             
-            # Upload data
+            # Upload data with USER_ENTERED to prevent date flipping
             worksheet.clear()
-            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+            # This 'value_input_option' ensures Google Sheets parses the strings correctly
+            worksheet.update(
+                [df.columns.values.tolist()] + df.values.tolist(),
+                value_input_option='USER_ENTERED' 
+            )
         except Exception as e:
             print(f"Could not sync {table}: {e}")
 
@@ -81,3 +97,4 @@ def run_sync():
 
 if __name__ == "__main__":
     run_sync()
+

@@ -10,49 +10,68 @@ import json
 
 # Settings
 SHEET_NAME = "BluecoinsDashboard"
-DB_NAME = "bluecoins.sqlite" # Exactly as it appears in Drive
+# Absolute path for the temp DB file to prevent blank file creation
+DB_PATH = os.path.join(os.getcwd(), "bluecoins_local.db")
 
 def run_sync():
-    # 1. Auth using GitHub Secrets
-    info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
-    creds = Credentials.from_service_account_info(info, scopes=[
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets'
-    ])
+    print("--- Starting Sync Process ---")
     
-    # 2. Find all .fydb files, ignore 0-byte files, and pick the newest
+    # 1. Auth using GitHub Secret
+    try:
+        info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
+        creds = Credentials.from_service_account_info(info, scopes=[
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/spreadsheets'
+        ])
+    except Exception as e:
+        print(f"Auth Error: {e}")
+        return
+
+    # 2. Find and Download newest .fydb file
     drive_service = build('drive', 'v3', credentials=creds)
     
+    # Filter for .fydb files, sort by newest, and ignore 0-byte files
     query = "name contains '.fydb' and trashed = false"
     results = drive_service.files().list(
         q=query, 
-        fields="files(id, name, modifiedTime, size)", # Added 'size'
-        orderBy="modifiedTime desc" 
+        fields="files(id, name, modifiedTime, size)",
+        orderBy="modifiedTime desc"
     ).execute()
     
-    files = results.get('files', [])
+    files = [f for f in results.get('files', []) if int(f.get('size', 0)) > 20000]
     
-    # Filter out files that are too small to be a real database (e.g., < 20KB)
-    valid_files = [f for f in files if int(f.get('size', 0)) > 20000]
-
-    if not valid_files:
-        print("No valid (non-empty) .fydb files found!")
+    if not files:
+        print("No valid .fydb files found in Drive!")
         return
 
-    newest_file = valid_files[0]
-    print(f"Syncing: {newest_file['name']} | Size: {int(newest_file['size'])/1024:.1f} KB")
+    target_file = files[0]
+    print(f"Downloading: {target_file['name']} ({int(target_file['size'])/1024:.1f} KB)")
 
-    # 3. SQL Query (Bluecoins Schema)
-    conn = sqlite3.connect("temp.db")
-    # This query joins transactions with categories and accounts
-    # --- ADD THIS TO sync.py TO SEE TABLE NAMES ---
+    # 3. Explicit Download to Disk (Ensures file integrity)
+    request = drive_service.files().get_media(fileId=target_file['id'])
+    with io.FileIO(DB_PATH, 'wb') as f:
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            print(f"Download Progress: {int(status.progress() * 100)}%")
+
+    # 4. Verify SQLite Connection & Table Names
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    print("Tables found in DB:", [row[0] for row in cursor.fetchall()])
-    # ----------------------------------------------
+    tables = [row[0] for row in cursor.fetchall()]
+    print(f"Tables found in DB: {tables}")
+
+    if 'TRANSACTIONSTABLE' not in tables:
+        print("ERROR: TRANSACTIONSTABLE not found. Check if the file is a valid Bluecoins backup.")
+        return
+
+    # 5. Execute Data Extraction
+    # Joins Transactions with Categories and Accounts
     query = """
     SELECT 
-        datetime(DATE/1000, 'unixepoch') as Date, 
+        datetime(DATE/1000, 'unixepoch', 'localtime') as Date, 
         ITEMNAME as Title, 
         AMOUNT/1000000.0 as Amount, 
         CATEGORYNAME as Category,
@@ -66,16 +85,15 @@ def run_sync():
     df = pd.read_sql_query(query, conn)
     conn.close()
 
-    # 4. Update Sheet
+    # 6. Push to Google Sheets
     gc = gspread.authorize(creds)
     sh = gc.open(SHEET_NAME)
     wks = sh.worksheet("RawData")
     wks.clear()
+    
+    # Insert data starting from A1
     wks.update([df.columns.values.tolist()] + df.values.tolist())
-    print("Sync Successful!")
+    print(f"Successfully synced {len(df)} transactions to Google Sheets!")
 
 if __name__ == "__main__":
-
     run_sync()
-
-

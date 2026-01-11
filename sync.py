@@ -95,7 +95,8 @@ def run_cross_file_sync():
     try:
         print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
         print(f"Service Account Email: {creds.service_account_email}")
-        sh_master = gc.open_by_key(MASTER_SHEET_ID.strip())
+        full_url = f"https://docs.google.com/spreadsheets/d/{MASTER_SHEET_ID}/edit"
+        sh_master = gc.open_by_url(full_url)
         print("Succesfully connected")
         worksheets = sh_master.worksheets()
         print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
@@ -281,6 +282,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

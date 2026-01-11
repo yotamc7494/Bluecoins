@@ -28,12 +28,21 @@ MASTER_TAB_GID = 911608347
 def run_cross_file_sync():
     print("--- Starting Full Engine Sync to DATA2 ---")
     
-    # 1. Force the Scope (Make sure 'drive' is in here!)
-    creds = Credentials.from_service_account_info(info, scopes=[
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ])
-    gc = gspread.authorize(creds)
+    try:
+        # This pulls the JSON from your GitHub Secret / Environment Variable
+        info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
+        
+        creds = Credentials.from_service_account_info(info, scopes=[
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/spreadsheets'
+        ])
+        gc = gspread.authorize(creds)
+    except KeyError:
+        print("Error: GCP_SERVICE_ACCOUNT_JSON not found in environment.")
+        return
+    except Exception as e:
+        print(f"Auth Error: {e}")
+        return
 
     # 2. Get Data from Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
@@ -279,6 +288,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

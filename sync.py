@@ -1,164 +1,66 @@
+import os
 import sqlite3
-
 import pandas as pd
-
 import gspread
-
 from google.oauth2.service_account import Credentials
-
-from googleapiclient.discovery import build
-
-from googleapiclient.http import MediaIoBaseDownload
-
-import io
-
 import json
 
-import os
-
 # Settings
-
 SHEET_NAME = "BluecoinsDashboard"
-
-DB_PATH = os.path.join(os.getcwd(), "bluecoins_mirror.db")
-
-
+TARGET_TAB = "DATA2" # Or "מאסטר" - ensure this matches your tab name exactly
 
 def run_sync():
-
-    print("--- Starting Full Database Mirror ---")
-
-    
-
     # 1. Auth
-
     info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
-
     creds = Credentials.from_service_account_info(info, scopes=[
-
         'https://www.googleapis.com/auth/drive',
-
         'https://www.googleapis.com/auth/spreadsheets'
-
     ])
-
-
-
-    # 2. Find and Download Newest File
-
-    drive_service = build('drive', 'v3', credentials=creds)
-
-    query = "name contains '.fydb' and trashed = false"
-
-    results = drive_service.files().list(q=query, fields="files(id, name, size)", orderBy="modifiedTime desc").execute()
-
     
-
-    files = [f for f in results.get('files', []) if int(f.get('size', 0)) > 20000]
-
-    if not files:
-
-        print("No valid database found!"); return
-
-
-
-    request = drive_service.files().get_media(fileId=files[0]['id'])
-
-    with io.FileIO(DB_PATH, 'wb') as f:
-
-        downloader = MediaIoBaseDownload(f, request)
-
-        done = False
-
-        while not done:
-
-            _, done = downloader.next_chunk()
-
-
-
-    # 3. Connect to Database
-
-    conn = sqlite3.connect(DB_PATH)
-
-    cursor = conn.cursor()
-
+    # 2. Connect to local SQLite (assuming you've already downloaded it in the previous step)
+    conn = sqlite3.connect("bluecoins_mirror.db")
     
+    # 3. Query with Translation Logic
+    # We map the IDs directly in SQL for speed
+    query = """
+    SELECT 
+        CASE 
+            WHEN transactionTypeID = 2 THEN 'New Account'
+            WHEN transactionTypeID = 3 THEN 'Expense'
+            WHEN transactionTypeID = 4 THEN 'Income'
+            WHEN transactionTypeID = 5 THEN 'Transfer'
+            ELSE 'Other'
+        END AS Type,
+        strftime('%Y-%m-%d', DATE/1000, 'unixepoch', 'localtime') as Date,
+        ITEMNAME as Title,
+        AMOUNT / 1000000.0 as Amount,
+        ACCOUNTID as AccountID,
+        CATEGORYID as CategoryID,
+        notes as Notes,
+        reminderTransaction as Reminder
+    FROM TRANSACTIONSTABLE
+    WHERE deletedTransaction = 6
+    ORDER BY DATE DESC
+    """
+    
+    df = pd.read_sql_query(query, conn)
+    df = df.fillna("")
 
-    # Get all table names
-
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-
-    tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
-
-    print(f"Found {len(tables)} tables: {tables}")
-
-
-
-    # 4. Connect to Google Sheets
-
+    # 4. Push to Google Sheets
     gc = gspread.authorize(creds)
-
     sh = gc.open(SHEET_NAME)
-
-    existing_worksheets = {ws.title: ws for ws in sh.worksheets()}
-
-
-
-    # 5. Loop through every table and update/create tabs
-
-    for table in tables:
-
-        print(f"Syncing table: {table}...")
-
-        try:
-
-            df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-
-            
-
-            # Clean up data for Google Sheets (convert dates/handle NaNs)
-
-            df = df.fillna("")
-
-            for col in df.select_dtypes(['datetime', 'datetimetz']).columns:
-
-                df[col] = df[col].astype(str)
-
-
-
-            # Create tab if missing
-
-            if table not in existing_worksheets:
-
-                worksheet = sh.add_worksheet(title=table, rows="100", cols="20")
-
-                print(f"Created new tab: {table}")
-
-            else:
-
-                worksheet = existing_worksheets[table]
-
-            
-
-            # Upload data
-
-            worksheet.clear()
-
-            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
-
-        except Exception as e:
-
-            print(f"Could not sync {table}: {e}")
-
-
-
+    worksheet = sh.worksheet(TARGET_TAB)
+    
+    # Clear existing data but keep headers (assuming headers are in Row 1)
+    # We overwrite from A2 downwards
+    worksheet.clear()
+    
+    # Update with headers + data
+    # Using 'USER_ENTERED' so Sheets treats 'Amount' as a number and 'Date' as a date
+    worksheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='USER_ENTERED')
+    
     conn.close()
-
-    print("--- Mirror Complete! ---")
-
-
+    print(f"--- Sync to {TARGET_TAB} Complete ---")
 
 if __name__ == "__main__":
-
     run_sync()
-

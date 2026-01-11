@@ -14,7 +14,7 @@ MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs" # Replace with 
 MASTER_TAB_NAME = "DATA2"
 
 def run_cross_file_sync():
-    print("--- Starting Cross-File Sync to מאסטר ---")
+    print("--- Starting Date & Type Sync to מאסטר ---")
     
     # 1. Auth
     info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
@@ -24,39 +24,54 @@ def run_cross_file_sync():
     ])
     gc = gspread.authorize(creds)
 
-    # 2. Access the Source Sheet (BluecoinsDashboard)
+    # 2. Access the Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
     ws_trans = sh_source.worksheet("TRANSACTIONSTABLE")
-    
-    # 3. Get all data from TRANSACTIONSTABLE
-    # We get all values to ensure we can find Column G (index 6)
     all_data = ws_trans.get_all_values()
+    
     if len(all_data) < 2:
-        print("No transaction data found."); return
+        print("No data found."); return
 
-    # Map the IDs: 2=New Account, 3=Expense, 4=Income, 5=Transfer
+    # Mapping Setup
     type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
     
-    # Column G is index 6 (A=0, B=1, C=2, D=3, E=4, F=5, G=6)
-    # We skip the header row (all_data[1:])
-    mapped_column = [["Type"]] # Header for DATA2
+    # Columns we need:
+    # F = index 5 (Date)
+    # G = index 6 (Type ID)
+    
+    final_output = [["Type", "Date"]] # Headers for Col A and B in DATA2
+    
     for row in all_data[1:]:
-        # Get the ID from Col G, default to 'Other' if not in map
+        # 1. Decode Type (Col G)
         tid = row[6] if len(row) > 6 else ""
-        mapped_column.append([type_map.get(tid, "Other")])
+        mapped_type = type_map.get(tid, "Other")
+        
+        # 2. Reformat Date (Col F)
+        raw_date = row[5] if len(row) > 5 else ""
+        formatted_date = ""
+        
+        if raw_date:
+            try:
+                # Parse the current format (01/05/2023 00:00:00)
+                dt_obj = datetime.strptime(raw_date, "%d/%m/%Y %H:%M:%S")
+                # Format to your target (24/12/2025 13:04:02)
+                formatted_date = dt_obj.strftime("%d/%m/%Y %H:%M:%S")
+            except ValueError:
+                formatted_date = raw_date # Keep original if parsing fails
+        
+        final_output.append([mapped_type, formatted_date])
 
-    # 4. Update the מאסטר (DATA2) File
+    # 3. Update the מאסטר (DATA2) File
     try:
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
         ws_master = sh_master.worksheet(MASTER_TAB_NAME)
         
-        # We clear and update only Column A to keep your other decoding columns safe
-        # 'A1' notation ensures we start from the very top
-        ws_master.update('A1', mapped_column)
+        # Update Columns A and B simultaneously
+        ws_master.update('A1', final_output)
         
-        print(f"--- Successfully mapped {len(mapped_column)-1} rows to DATA2! ---")
+        print(f"--- Success! Mapped Type and Dates to {MASTER_TAB_NAME} ---")
     except Exception as e:
-        print(f"Error accessing Master Sheet: {e}")
+        print(f"Error: {e}")
 
 
 
@@ -233,4 +248,5 @@ def run_sync():
 if __name__ == "__main__":
     run_cross_file_sync()
     run_sync()
+
 

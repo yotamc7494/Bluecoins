@@ -37,68 +37,88 @@ def run_cross_file_sync():
     # 2. Get Data from Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
     
-    # Title Lookup Dictionary
-    ws_items = sh_source.worksheet("ITEMTABLE")
-    item_data = ws_items.get_all_values()
-    title_lookup = {row[0]: row[1] for row in item_data[1:] if len(row) > 1}
+    # ... (Previous imports and Auth logic remain the same)
 
-    # Transactions
+def run_full_engine_sync():
+    # 1. Auth (Ensure 'info' and 'gc' are defined)
+    info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
+    creds = Credentials.from_service_account_info(info, scopes=[
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/spreadsheets'
+    ])
+    gc = gspread.authorize(creds)
+    sh_source = gc.open(SOURCE_SHEET_NAME)
+
+    # --- NEW CATEGORY MAPPING LOGIC ---
+    
+    # 1. Map Parent Groups (ID -> Group Name)
+    ws_parent = sh_source.worksheet("PARENTCATEGORYTABLE")
+    parent_rows = ws_parent.get_all_values()
+    # A=ID (0), B=Name (1)
+    group_lookup = {row[0]: row[1] for row in parent_rows[1:] if len(row) > 1}
+
+    # 2. Map Child Categories (ID -> {Name, ParentID})
+    ws_child = sh_source.worksheet("CHILDCATEGORYTABLE")
+    child_rows = ws_child.get_all_values()
+    # A=ID (0), B=Name (1), C=ParentID (2)
+    cat_lookup = {row[0]: {'name': row[1], 'parent': row[2]} for row in child_rows[1:] if len(row) > 2}
+
+    # 3. Item & Account Lookups (Same as before)
+    ws_items = sh_source.worksheet("ITEMTABLE")
+    title_lookup = {row[0]: row[1] for row in ws_items.get_all_values()[1:] if len(row) > 1}
+    
+    ws_accounts = sh_source.worksheet("ACCOUNTSTABLE")
+    account_lookup = {row[0]: row[1] for row in ws_accounts.get_all_values()[1:] if len(row) > 1}
+
+    # 4. Process Transactions
     ws_trans = sh_source.worksheet("TRANSACTIONSTABLE")
     trans_data = ws_trans.get_all_values()
     
-    if len(trans_data) < 2:
-        print("No transactions found."); return
-
-    # 3. Map the data
-    type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
-    final_output = [["Type", "Date", "Time", "Title", "Amount", "Currency", "Exchange Rate"]]
+    # Headers for DATA2: A-I
+    final_output = [["Type", "Date", "Time", "Title", "Amount", "Currency", "Exchange Rate", "Category Group", "Category"]]
     
     for row in trans_data[1:]:
-        # A: Type (Index 6)
-        tid = row[6] if len(row) > 6 else ""
+        # Existing Mappings
+        tid = row[6] # transactionTypeID
+        type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
         mapped_type = type_map.get(tid, "Other")
         
-        # B/C: Date & Time (Index 5)
-        raw_date = row[5] if len(row) > 5 else ""
+        # Date/Time Logic (Index 5)
+        raw_date = row[5]
         clean_date, clean_time = "", ""
-        if raw_date:
-            try:
-                dt_obj = datetime.strptime(raw_date, "%d/%m/%Y %H:%M:%S")
-                clean_date = dt_obj.strftime("%d/%m/%Y")
-                clean_time = dt_obj.strftime("%H:%M:%S")
-            except ValueError:
-                clean_date = raw_date
-
-        # D: Title (Index 1 mapped)
-        title_id = row[1] if len(row) > 1 else ""
-        mapped_title = title_lookup.get(title_id, "Unknown Item")
-
-        # E, F, G: Amount, Currency, Rate (Indices 2, 3, 4)
-        # We divide amount by 1,000,000 to get the real decimal value
-        raw_amount = row[2] if len(row) > 2 else "0"
         try:
-            amount = float(raw_amount) / 1000000.0
-        except ValueError:
-            amount = 0
-            
-        currency = row[3] if len(row) > 3 else ""
-        rate = row[4] if len(row) > 4 else "1"
+            dt_obj = datetime.strptime(raw_date, "%d/%m/%Y %H:%M:%S")
+            clean_date = dt_obj.strftime("%d/%m/%Y")
+            clean_time = dt_obj.strftime("%H:%M:%S")
+        except: clean_date = raw_date
+
+        mapped_title = title_lookup.get(row[1], "Unknown Item")
+        amount = (float(row[2]) / 1000000.0) if row[2] else 0
+        currency, rate = row[3], row[4]
+
+        # --- CATEGORY LOGIC (Col H & I) ---
+        # TRANSACTIONSTABLE index 7 is typically categoryID (Col H in raw)
+        cat_id = row[7] if len(row) > 7 else ""
+        
+        category_name = "None"
+        group_name = "None"
+        
+        if cat_id in cat_lookup:
+            category_name = cat_lookup[cat_id]['name']
+            parent_id = cat_lookup[cat_id]['parent']
+            group_name = group_lookup.get(parent_id, "Unknown Group")
 
         final_output.append([
             mapped_type, clean_date, clean_time, mapped_title, 
-            amount, currency, rate
+            amount, currency, rate, group_name, category_name
         ])
 
-    # 4. Update DATA2
+    # 5. Push to DATA2 GID: 911608347
     try:
-        print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
-        print("Succesfully connected")
-        worksheets = sh_master.worksheets()
-        print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
         ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_GID)
         ws_master.update('A1', final_output)
-        print(f"--- Successfully synced {len(final_output)-1} rows to DATA2 ---")
+        print("--- Master Sync Success! ---")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -278,6 +298,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

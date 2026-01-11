@@ -93,6 +93,7 @@ def run_cross_file_sync():
 
     # 4. Update DATA2
     try:
+        print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
         worksheets = sh_master.worksheets()
         print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
@@ -275,9 +276,10 @@ def run_sync():
     print("--- All Syncing Complete! ---")
 
 if __name__ == "__main__":
-    run_sync()
+    # run_sync()
     run_cross_file_sync()
     
+
 
 
 

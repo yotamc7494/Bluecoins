@@ -12,7 +12,7 @@ import io
 # Settings
 SOURCE_SHEET_NAME = "BluecoinsDashboard"
 MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs" # Replace with your actual ID
-MASTER_TAB_NAME = "DATA2"
+MASTER_TAB_ID = 911608347
 
 def run_cross_file_sync():
     print("--- Starting Date & Type Sync to מאסטר ---")
@@ -65,7 +65,7 @@ def run_cross_file_sync():
     # 3. Update the מאסטר (DATA2) File
     try:
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
-        ws_master = sh_master.worksheet(MASTER_TAB_NAME)
+        ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_ID)
         
         # Update Columns A and B simultaneously
         ws_master.update('A1', final_output)
@@ -250,6 +250,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

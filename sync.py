@@ -37,77 +37,88 @@ def run_cross_file_sync():
     # 2. Get Data from Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
     
-    
-    # 1. Map Parent Groups (ID -> Group Name)
-    ws_parent = sh_source.worksheet("PARENTCATEGORYTABLE")
-    parent_rows = ws_parent.get_all_values()
+    # Labels (One-to-Many)
+    # LABELSTABLE: B=Label Name (1), C=TransactionID (2)
+    ws_labels = sh_source.worksheet("LABELSTABLE")
+    label_rows = ws_labels.get_all_values()
+    label_map = {}
+    for row in label_rows[1:]:
+        if len(row) > 2:
+            label_name = row[1]
+            trans_id = row[2]
+            if trans_id not in label_map:
+                label_map[trans_id] = []
+            label_map[trans_id].append(label_name)
+
+    # Accounts (ID -> Name)
+    ws_acc = sh_source.worksheet("ACCOUNTSTABLE")
     # A=ID (0), B=Name (1)
-    group_lookup = {row[0]: row[1] for row in parent_rows[1:] if len(row) > 1}
+    account_lookup = {row[0]: row[1] for row in ws_acc.get_all_values()[1:] if len(row) > 1}
 
-    # 2. Map Child Categories (ID -> {Name, ParentID})
-    ws_child = sh_source.worksheet("CHILDCATEGORYTABLE")
-    child_rows = ws_child.get_all_values()
-    # A=ID (0), B=Name (1), C=ParentID (2)
-    cat_lookup = {row[0]: {'name': row[1], 'parent': row[2]} for row in child_rows[1:] if len(row) > 2}
+    # Categories & Titles (Existing Logic)
+    group_lookup = {row[0]: row[1] for row in sh_source.worksheet("PARENTCATEGORYTABLE").get_all_values()[1:]}
+    cat_lookup = {row[0]: {'name': row[1], 'parent': row[2]} for row in sh_source.worksheet("CHILDCATEGORYTABLE").get_all_values()[1:]}
+    title_lookup = {row[0]: row[1] for row in sh_source.worksheet("ITEMTABLE").get_all_values()[1:]}
 
-    # 3. Item & Account Lookups (Same as before)
-    ws_items = sh_source.worksheet("ITEMTABLE")
-    title_lookup = {row[0]: row[1] for row in ws_items.get_all_values()[1:] if len(row) > 1}
-    
-    ws_accounts = sh_source.worksheet("ACCOUNTSTABLE")
-    account_lookup = {row[0]: row[1] for row in ws_accounts.get_all_values()[1:] if len(row) > 1}
-
-    # 4. Process Transactions
+    # 2. PROCESS TRANSACTIONS
     ws_trans = sh_source.worksheet("TRANSACTIONSTABLE")
     trans_data = ws_trans.get_all_values()
     
-    # Headers for DATA2: A-I
-    final_output = [["Type", "Date", "Time", "Title", "Amount", "Currency", "Exchange Rate", "Category Group", "Category"]]
+    # Header Update: A(0) to M(12)
+    header = ["Type", "Date", "Time", "Title", "Amount", "Currency", "Exchange Rate", 
+              "Category Group", "Category", "Account", "Notes", "Labels", "Status"]
+    final_output = [header]
     
     for row in trans_data[1:]:
-        # Existing Mappings
-        tid = row[6] # transactionTypeID
+        # A-D: Basic Info
+        t_id = row[0] # Transaction ID for Label Lookup
+        tid_type = row[6]
         type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
-        mapped_type = type_map.get(tid, "Other")
+        mapped_type = type_map.get(tid_type, "Other")
         
-        # Date/Time Logic (Index 5)
-        raw_date = row[5]
-        clean_date, clean_time = "", ""
+        # B/C: Date & Time
         try:
-            dt_obj = datetime.strptime(raw_date, "%d/%m/%Y %H:%M:%S")
-            clean_date = dt_obj.strftime("%d/%m/%Y")
-            clean_time = dt_obj.strftime("%H:%M:%S")
-        except: clean_date = raw_date
+            dt_obj = datetime.strptime(row[5], "%d/%m/%Y %H:%M:%S")
+            clean_date, clean_time = dt_obj.strftime("%d/%m/%Y"), dt_obj.strftime("%H:%M:%S")
+        except: clean_date, clean_time = row[5], ""
 
+        # D-G: Title, Amount, Currency, Rate
         mapped_title = title_lookup.get(row[1], "Unknown Item")
         amount = (float(row[2]) / 1000000.0) if row[2] else 0
         currency, rate = row[3], row[4]
 
-        # --- CATEGORY LOGIC (Col H & I) ---
-        # TRANSACTIONSTABLE index 7 is typically categoryID (Col H in raw)
-        cat_id = row[7] if len(row) > 7 else ""
-        
-        category_name = "None"
-        group_name = "None"
-        
-        if cat_id in cat_lookup:
-            category_name = cat_lookup[cat_id]['name']
-            parent_id = cat_lookup[cat_id]['parent']
-            group_name = group_lookup.get(parent_id, "Unknown Group")
+        # H-I: Categories
+        cat_id = row[7]
+        cat_name = cat_lookup.get(cat_id, {}).get('name', "None")
+        group_name = group_lookup.get(cat_lookup.get(cat_id, {}).get('parent'), "None")
+
+        # J: Account (Index 8 in TRANSACTIONSTABLE)
+        acc_id = row[8] if len(row) > 8 else ""
+        acc_name = account_lookup.get(acc_id, "Unknown Account")
+
+        # K: Notes (Index 9 in TRANSACTIONSTABLE)
+        notes = row[9] if len(row) > 9 else ""
+
+        # L: Labels (Joining with space)
+        labels_list = label_map.get(t_id, [])
+        joined_labels = " ".join(labels_list)
+
+        # M: Status (Index 10 in TRANSACTIONSTABLE)
+        status = row[10] if len(row) > 10 else ""
 
         final_output.append([
-            mapped_type, clean_date, clean_time, mapped_title, 
-            amount, currency, rate, group_name, category_name
+            mapped_type, clean_date, clean_time, mapped_title, amount, 
+            currency, rate, group_name, cat_name, acc_name, notes, joined_labels, status
         ])
 
-    # 5. Push to DATA2 GID: 911608347
+    # 3. PUSH TO MASTER
     try:
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
         ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_GID)
         ws_master.update('A1', final_output)
-        print("--- Master Sync Success! ---")
+        print(f"--- Successfully synced {len(final_output)-1} rows to DATA2 ---")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Update failed: {e}")
 
 
 
@@ -285,6 +296,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

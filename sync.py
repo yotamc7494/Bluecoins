@@ -71,6 +71,11 @@ def run_cross_file_sync():
     
     for row in trans_data[1:]:
         # A-D: Basic Info
+        is_deleted = row[14] if len(row) > 14 else ""
+        is_future = row[17] if len(row) > 17 else ""
+        
+        if is_deleted == '5' or is_future == '9':
+            continue  # This skips the rest of the loop for this row
         t_id = row[0] # Transaction ID for Label Lookup
         tid_type = row[6]
         type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
@@ -296,6 +301,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

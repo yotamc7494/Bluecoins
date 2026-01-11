@@ -25,7 +25,7 @@ SOURCE_SHEET_NAME = "BluecoinsDashboard"
 MASTER_SHEET_ID = "YOUR_MASTER_SHEET_ID_HERE"
 MASTER_TAB_GID = 911608347 
 
-def run_full_engine_sync():
+def run_cross_file_sync():
     print("--- Starting Full Engine Sync to DATA2 ---")
     
     # 1. Auth
@@ -276,6 +276,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

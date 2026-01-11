@@ -12,10 +12,21 @@ import io
 # Settings
 SOURCE_SHEET_NAME = "BluecoinsDashboard"
 MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs" # Replace with your actual ID
-MASTER_TAB_ID = 911608347
+MASTER_TAB_GID = 911608347
 
 def run_cross_file_sync():
-    print("--- Starting Date & Type Sync to מאסטר ---")
+    from datetime import datetime
+import json
+import gspread
+from google.oauth2.service_account import Credentials
+
+# Configuration
+SOURCE_SHEET_NAME = "BluecoinsDashboard"
+MASTER_SHEET_ID = "YOUR_MASTER_SHEET_ID_HERE"
+MASTER_TAB_GID = 911608347 
+
+def run_full_engine_sync():
+    print("--- Starting Full Engine Sync to DATA2 ---")
     
     # 1. Auth
     info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
@@ -25,52 +36,67 @@ def run_cross_file_sync():
     ])
     gc = gspread.authorize(creds)
 
-    # 2. Access the Source
+    # 2. Get Data from Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
-    ws_trans = sh_source.worksheet("TRANSACTIONSTABLE")
-    all_data = ws_trans.get_all_values()
     
-    if len(all_data) < 2:
-        print("No data found."); return
+    # Title Lookup Dictionary
+    ws_items = sh_source.worksheet("ITEMTABLE")
+    item_data = ws_items.get_all_values()
+    title_lookup = {row[0]: row[1] for row in item_data[1:] if len(row) > 1}
 
-    # Mapping Setup
+    # Transactions
+    ws_trans = sh_source.worksheet("TRANSACTIONSTABLE")
+    trans_data = ws_trans.get_all_values()
+    
+    if len(trans_data) < 2:
+        print("No transactions found."); return
+
+    # 3. Map the data
     type_map = {'2': 'New Account', '3': 'Expense', '4': 'Income', '5': 'Transfer'}
+    final_output = [["Type", "Date", "Time", "Title", "Amount", "Currency", "Exchange Rate"]]
     
-    # Columns we need:
-    # F = index 5 (Date)
-    # G = index 6 (Type ID)
-    
-    final_output = [["Type", "Date"]] # Headers for Col A and B in DATA2
-    
-    for row in all_data[1:]:
-        # 1. Decode Type (Col G)
+    for row in trans_data[1:]:
+        # A: Type (Index 6)
         tid = row[6] if len(row) > 6 else ""
         mapped_type = type_map.get(tid, "Other")
         
-        # 2. Reformat Date (Col F)
+        # B/C: Date & Time (Index 5)
         raw_date = row[5] if len(row) > 5 else ""
-        formatted_date = ""
-        
+        clean_date, clean_time = "", ""
         if raw_date:
             try:
-                # Parse the current format (01/05/2023 00:00:00)
                 dt_obj = datetime.strptime(raw_date, "%d/%m/%Y %H:%M:%S")
-                # Format to your target (24/12/2025 13:04:02)
-                formatted_date = dt_obj.strftime("%d/%m/%Y %H:%M:%S")
+                clean_date = dt_obj.strftime("%d/%m/%Y")
+                clean_time = dt_obj.strftime("%H:%M:%S")
             except ValueError:
-                formatted_date = raw_date # Keep original if parsing fails
-        
-        final_output.append([mapped_type, formatted_date])
+                clean_date = raw_date
 
-    # 3. Update the מאסטר (DATA2) File
+        # D: Title (Index 1 mapped)
+        title_id = row[1] if len(row) > 1 else ""
+        mapped_title = title_lookup.get(title_id, "Unknown Item")
+
+        # E, F, G: Amount, Currency, Rate (Indices 2, 3, 4)
+        # We divide amount by 1,000,000 to get the real decimal value
+        raw_amount = row[2] if len(row) > 2 else "0"
+        try:
+            amount = float(raw_amount) / 1000000.0
+        except ValueError:
+            amount = 0
+            
+        currency = row[3] if len(row) > 3 else ""
+        rate = row[4] if len(row) > 4 else "1"
+
+        final_output.append([
+            mapped_type, clean_date, clean_time, mapped_title, 
+            amount, currency, rate
+        ])
+
+    # 4. Update DATA2
     try:
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
-        ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_ID)
-        
-        # Update Columns A and B simultaneously
+        ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_GID)
         ws_master.update('A1', final_output)
-        
-        print(f"--- Success! Mapped Type and Dates to {MASTER_TAB_NAME} ---")
+        print(f"--- Successfully synced {len(final_output)-1} rows to DATA2 ---")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -250,6 +276,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

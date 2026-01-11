@@ -14,16 +14,6 @@ SOURCE_SHEET_NAME = "BluecoinsDashboard"
 MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs"
 MASTER_TAB_GID = 911608347
 
-def run_cross_file_sync():
-    from datetime import datetime
-import json
-import gspread
-from google.oauth2.service_account import Credentials
-
-# Configuration
-SOURCE_SHEET_NAME = "BluecoinsDashboard"
-MASTER_SHEET_ID = "YOUR_MASTER_SHEET_ID_HERE"
-MASTER_TAB_GID = 911608347 
 
 def run_cross_file_sync():
     print("--- Starting Full Engine Sync to DATA2 ---")
@@ -288,6 +278,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

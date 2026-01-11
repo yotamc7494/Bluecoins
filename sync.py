@@ -279,9 +279,10 @@ def run_sync():
     print("--- All Syncing Complete! ---")
 
 if __name__ == "__main__":
-    # run_sync()
+    run_sync()
     run_cross_file_sync()
     
+
 
 
 

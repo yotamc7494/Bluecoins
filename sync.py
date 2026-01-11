@@ -94,6 +94,7 @@ def run_cross_file_sync():
     # 4. Update DATA2
     try:
         print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
+        print(f"Service Account Email: {creds.service_account_email}")
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
         print("Succesfully connected")
         worksheets = sh_master.worksheets()
@@ -280,6 +281,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

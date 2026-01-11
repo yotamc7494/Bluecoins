@@ -11,7 +11,7 @@ import io
 
 # Settings
 SOURCE_SHEET_NAME = "BluecoinsDashboard"
-MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs" # Replace with your actual ID
+MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs"
 MASTER_TAB_GID = 911608347
 
 def run_cross_file_sync():
@@ -95,6 +95,7 @@ def run_cross_file_sync():
     try:
         print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
+        print("Succesfully connected")
         worksheets = sh_master.worksheets()
         print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
         ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_GID)
@@ -279,6 +280,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

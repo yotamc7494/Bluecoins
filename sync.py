@@ -12,7 +12,7 @@ import io
 # Settings
 SOURCE_SHEET_NAME = "BluecoinsDashboard"
 MASTER_SHEET_ID = "1814vXhsCd1-krE6TCQNIjT27T992PZBHe2V9hfdKeWs"
-MASTER_TAB_GID = 911608347
+MASTER_TAB_GID = 1743491340
 
 
 def run_cross_file_sync():
@@ -301,6 +301,7 @@ if __name__ == "__main__":
     # run_sync()
     run_cross_file_sync()
     
+
 
 
 

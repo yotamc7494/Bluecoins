@@ -94,6 +94,8 @@ def run_cross_file_sync():
     # 4. Update DATA2
     try:
         sh_master = gc.open_by_key(MASTER_SHEET_ID)
+        worksheets = sh_master.worksheets()
+        print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
         ws_master = sh_master.get_worksheet_by_id(MASTER_TAB_GID)
         ws_master.update('A1', final_output)
         print(f"--- Successfully synced {len(final_output)-1} rows to DATA2 ---")
@@ -276,6 +278,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

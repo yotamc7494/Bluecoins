@@ -28,11 +28,10 @@ MASTER_TAB_GID = 911608347
 def run_cross_file_sync():
     print("--- Starting Full Engine Sync to DATA2 ---")
     
-    # 1. Auth
-    info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
+    # 1. Force the Scope (Make sure 'drive' is in here!)
     creds = Credentials.from_service_account_info(info, scopes=[
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets'
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
     ])
     gc = gspread.authorize(creds)
 
@@ -94,9 +93,7 @@ def run_cross_file_sync():
     # 4. Update DATA2
     try:
         print(f"Connecting to Master Sheet ID: {MASTER_SHEET_ID}...")
-        print(f"Service Account Email: {creds.service_account_email}")
-        full_url = f"https://docs.google.com/spreadsheets/d/{MASTER_SHEET_ID}/edit"
-        sh_master = gc.open_by_url(full_url)
+        sh_master = gc.open_by_key(MASTER_SHEET_ID)
         print("Succesfully connected")
         worksheets = sh_master.worksheets()
         print("Available tabs:", [f"{ws.title} (ID: {ws.id})" for ws in worksheets])
@@ -282,6 +279,7 @@ if __name__ == "__main__":
     run_sync()
     run_cross_file_sync()
     
+
 
 
 

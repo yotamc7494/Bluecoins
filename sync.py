@@ -37,19 +37,6 @@ def run_cross_file_sync():
     # 2. Get Data from Source
     sh_source = gc.open(SOURCE_SHEET_NAME)
     
-    # ... (Previous imports and Auth logic remain the same)
-
-def run_full_engine_sync():
-    # 1. Auth (Ensure 'info' and 'gc' are defined)
-    info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
-    creds = Credentials.from_service_account_info(info, scopes=[
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets'
-    ])
-    gc = gspread.authorize(creds)
-    sh_source = gc.open(SOURCE_SHEET_NAME)
-
-    # --- NEW CATEGORY MAPPING LOGIC ---
     
     # 1. Map Parent Groups (ID -> Group Name)
     ws_parent = sh_source.worksheet("PARENTCATEGORYTABLE")
@@ -295,9 +282,10 @@ def run_sync():
     print("--- All Syncing Complete! ---")
 
 if __name__ == "__main__":
-    run_sync()
+    # run_sync()
     run_cross_file_sync()
     
+
 
 
 
